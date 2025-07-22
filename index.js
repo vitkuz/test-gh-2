@@ -55,6 +55,33 @@ app.get('/api/background-service', (req, res) => {
   });
 });
 
+app.get('/api/users', (req, res) => {
+  res.json({
+    totalUsers: connectedUsers.size,
+    users: getUserList()
+  });
+});
+
+// User presence tracking
+const connectedUsers = new Map();
+const adjectives = ['Happy', 'Clever', 'Brave', 'Swift', 'Bright', 'Cool', 'Super', 'Smart', 'Lucky', 'Mighty'];
+const animals = ['Tiger', 'Eagle', 'Dolphin', 'Lion', 'Wolf', 'Bear', 'Fox', 'Hawk', 'Shark', 'Panda'];
+
+const generateUsername = () => {
+  const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const animal = animals[Math.floor(Math.random() * animals.length)];
+  const number = Math.floor(Math.random() * 100);
+  return `${adjective}${animal}${number}`;
+};
+
+const getUserList = () => {
+  return Array.from(connectedUsers.values()).map(user => ({
+    id: user.id,
+    username: user.username,
+    connectedAt: user.connectedAt
+  }));
+};
+
 // Background service - Time broadcaster
 let timeInterval = null;
 const TIME_BROADCAST_INTERVAL = 1000; // Broadcast every second
@@ -85,26 +112,65 @@ const stopTimeBroadcast = () => {
 io.on('connection', (socket) => {
   console.log('New WebSocket client connected:', socket.id);
   
-  // Send welcome message
+  // Create user and add to connected users
+  const user = {
+    id: socket.id,
+    username: generateUsername(),
+    connectedAt: new Date().toISOString()
+  };
+  connectedUsers.set(socket.id, user);
+  
+  // Send welcome message with user info
   socket.emit('welcome', {
     message: 'Connected to WebSocket server',
     socketId: socket.id,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    user: user,
+    onlineUsers: getUserList()
+  });
+  
+  // Broadcast user joined to all other clients
+  socket.broadcast.emit('user-joined', {
+    user: user,
+    onlineUsers: getUserList(),
+    totalUsers: connectedUsers.size
+  });
+  
+  // Handle username change
+  socket.on('change-username', (newUsername) => {
+    const user = connectedUsers.get(socket.id);
+    if (user && newUsername && newUsername.trim()) {
+      const oldUsername = user.username;
+      user.username = newUsername.trim();
+      connectedUsers.set(socket.id, user);
+      
+      // Notify all clients about username change
+      io.emit('username-changed', {
+        userId: socket.id,
+        oldUsername: oldUsername,
+        newUsername: user.username,
+        onlineUsers: getUserList()
+      });
+    }
   });
   
   // Echo messages back to client
   socket.on('message', (data) => {
     console.log('Received message:', data);
+    const user = connectedUsers.get(socket.id);
     socket.emit('echo', {
       original: data,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      from: user ? user.username : 'Unknown'
     });
   });
   
   // Broadcast to all clients
   socket.on('broadcast', (data) => {
+    const user = connectedUsers.get(socket.id);
     io.emit('broadcast', {
       from: socket.id,
+      username: user ? user.username : 'Unknown',
       message: data,
       timestamp: new Date().toISOString()
     });
@@ -112,6 +178,17 @@ io.on('connection', (socket) => {
   
   socket.on('disconnect', () => {
     console.log('WebSocket client disconnected:', socket.id);
+    const user = connectedUsers.get(socket.id);
+    connectedUsers.delete(socket.id);
+    
+    // Broadcast user left to all remaining clients
+    if (user) {
+      io.emit('user-left', {
+        user: user,
+        onlineUsers: getUserList(),
+        totalUsers: connectedUsers.size
+      });
+    }
   });
 });
 
