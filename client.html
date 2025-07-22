@@ -16,6 +16,9 @@
 <body>
     <h1>WebSocket Test Client</h1>
     <div id="status">Connecting...</div>
+    <div id="currentTime" style="font-size: 24px; font-weight: bold; margin: 10px 0; padding: 10px; background: #e0f0ff;">
+        Current Server Time: <span id="timeDisplay">--:--:--</span>
+    </div>
     <div id="messages"></div>
     <div>
         <input type="text" id="messageInput" placeholder="Enter message">
@@ -44,6 +47,10 @@
 
         socket.on('broadcast', (data) => {
             addMessage('Broadcast: ' + JSON.stringify(data));
+        });
+
+        socket.on('time-update', (data) => {
+            document.getElementById('timeDisplay').textContent = data.formatted;
         });
 
         socket.on('disconnect', () => {
