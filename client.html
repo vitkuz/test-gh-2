@@ -7,23 +7,49 @@
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { display: flex; gap: 20px; }
+        .main-panel { flex: 1; }
+        .users-panel { width: 250px; }
         #messages { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: auto; margin-bottom: 10px; }
         .message { margin: 5px 0; padding: 5px; background: #f0f0f0; }
+        .system-message { background: #e0f0ff; font-style: italic; }
+        .user-join { background: #d4edda; }
+        .user-leave { background: #f8d7da; }
+        #usersList { border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: auto; }
+        .user-item { padding: 5px; margin: 2px 0; background: #f9f9f9; border-radius: 3px; }
+        .user-count { font-weight: bold; margin-bottom: 10px; }
         input { width: 300px; padding: 5px; }
         button { padding: 5px 10px; margin-left: 5px; }
+        #usernameSection { margin-bottom: 10px; padding: 10px; background: #f0f0f0; }
     </style>
 </head>
 <body>
     <h1>WebSocket Test Client</h1>
     <div id="status">Connecting...</div>
-    <div id="currentTime" style="font-size: 24px; font-weight: bold; margin: 10px 0; padding: 10px; background: #e0f0ff;">
-        Current Server Time: <span id="timeDisplay">--:--:--</span>
+    
+    <div id="usernameSection">
+        Your username: <span id="currentUsername" style="font-weight: bold;">...</span>
+        <button onclick="changeUsername()">Change</button>
     </div>
-    <div id="messages"></div>
-    <div>
-        <input type="text" id="messageInput" placeholder="Enter message">
-        <button onclick="sendMessage()">Send Message</button>
-        <button onclick="broadcastMessage()">Broadcast</button>
+    
+    <div class="container">
+        <div class="main-panel">
+            <div id="currentTime" style="font-size: 24px; font-weight: bold; margin: 10px 0; padding: 10px; background: #e0f0ff;">
+                Current Server Time: <span id="timeDisplay">--:--:--</span>
+            </div>
+            <div id="messages"></div>
+            <div>
+                <input type="text" id="messageInput" placeholder="Enter message">
+                <button onclick="sendMessage()">Send Message</button>
+                <button onclick="broadcastMessage()">Broadcast</button>
+            </div>
+        </div>
+        
+        <div class="users-panel">
+            <h3>Online Users</h3>
+            <div class="user-count">Total: <span id="userCount">0</span></div>
+            <div id="usersList"></div>
+        </div>
     </div>
 
     <script>
@@ -31,22 +57,46 @@
         const statusDiv = document.getElementById('status');
         const messagesDiv = document.getElementById('messages');
         const messageInput = document.getElementById('messageInput');
+        let currentUser = null;
 
         socket.on('connect', () => {
             statusDiv.textContent = 'Connected: ' + socket.id;
-            addMessage('Connected to server');
+            addSystemMessage('Connected to server');
         });
 
         socket.on('welcome', (data) => {
-            addMessage('Welcome: ' + JSON.stringify(data));
+            currentUser = data.user;
+            document.getElementById('currentUsername').textContent = currentUser.username;
+            updateUsersList(data.onlineUsers);
+            addSystemMessage(`Welcome! You are ${currentUser.username}`);
+        });
+
+        socket.on('user-joined', (data) => {
+            updateUsersList(data.onlineUsers);
+            updateUserCount(data.totalUsers);
+            addSystemMessage(`${data.user.username} joined the chat`, 'user-join');
+        });
+
+        socket.on('user-left', (data) => {
+            updateUsersList(data.onlineUsers);
+            updateUserCount(data.totalUsers);
+            addSystemMessage(`${data.user.username} left the chat`, 'user-leave');
+        });
+
+        socket.on('username-changed', (data) => {
+            updateUsersList(data.onlineUsers);
+            if (data.userId === socket.id) {
+                document.getElementById('currentUsername').textContent = data.newUsername;
+            }
+            addSystemMessage(`${data.oldUsername} changed their name to ${data.newUsername}`);
         });
 
         socket.on('echo', (data) => {
-            addMessage('Echo: ' + JSON.stringify(data));
+            addMessage(`Echo from ${data.from}: ${data.original}`);
         });
 
         socket.on('broadcast', (data) => {
-            addMessage('Broadcast: ' + JSON.stringify(data));
+            addMessage(`${data.username}: ${data.message}`);
         });
 
         socket.on('time-update', (data) => {
@@ -55,7 +105,9 @@
 
         socket.on('disconnect', () => {
             statusDiv.textContent = 'Disconnected';
-            addMessage('Disconnected from server');
+            addSystemMessage('Disconnected from server');
+            document.getElementById('usersList').innerHTML = '';
+            document.getElementById('userCount').textContent = '0';
         });
 
         function addMessage(text) {
@@ -64,6 +116,41 @@
             messageDiv.textContent = new Date().toLocaleTimeString() + ' - ' + text;
             messagesDiv.appendChild(messageDiv);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function addSystemMessage(text, className = 'system-message') {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${className}`;
+            messageDiv.textContent = new Date().toLocaleTimeString() + ' - ' + text;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateUsersList(users) {
+            const usersList = document.getElementById('usersList');
+            usersList.innerHTML = '';
+            users.forEach(user => {
+                const userDiv = document.createElement('div');
+                userDiv.className = 'user-item';
+                userDiv.textContent = user.username;
+                if (user.id === socket.id) {
+                    userDiv.style.fontWeight = 'bold';
+                    userDiv.textContent += ' (You)';
+                }
+                usersList.appendChild(userDiv);
+            });
+            updateUserCount(users.length);
+        }
+
+        function updateUserCount(count) {
+            document.getElementById('userCount').textContent = count;
+        }
+
+        function changeUsername() {
+            const newUsername = prompt('Enter new username:', currentUser ? currentUser.username : '');
+            if (newUsername && newUsername.trim()) {
+                socket.emit('change-username', newUsername.trim());
+            }
         }
 
         function sendMessage() {
