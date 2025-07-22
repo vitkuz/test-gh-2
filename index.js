@@ -23,6 +23,19 @@ app.get('/api/version', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use.`);
+    console.log('Please either:');
+    console.log(`1. Stop the process using port ${PORT}`);
+    console.log('2. Set a different port using: PORT=3001 npm start');
+    process.exit(1);
+  } else {
+    console.error('Server error:', err);
+    process.exit(1);
+  }
 });
