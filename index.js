@@ -1,11 +1,26 @@
 const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
+
 const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
 app.get('/', (req, res) => {
   res.json({ message: 'Welcome to our API!' });
+});
+
+app.get('/test', (req, res) => {
+  res.sendFile(__dirname + '/client.html');
 });
 
 app.get('/health', (req, res) => {
@@ -23,7 +38,48 @@ app.get('/api/version', (req, res) => {
   });
 });
 
-const server = app.listen(PORT, () => {
+app.get('/api/websocket', (req, res) => {
+  res.json({
+    status: 'WebSocket server is running',
+    endpoint: `ws://localhost:${PORT}`
+  });
+});
+
+// WebSocket connection handling
+io.on('connection', (socket) => {
+  console.log('New WebSocket client connected:', socket.id);
+  
+  // Send welcome message
+  socket.emit('welcome', {
+    message: 'Connected to WebSocket server',
+    socketId: socket.id,
+    timestamp: new Date().toISOString()
+  });
+  
+  // Echo messages back to client
+  socket.on('message', (data) => {
+    console.log('Received message:', data);
+    socket.emit('echo', {
+      original: data,
+      timestamp: new Date().toISOString()
+    });
+  });
+  
+  // Broadcast to all clients
+  socket.on('broadcast', (data) => {
+    io.emit('broadcast', {
+      from: socket.id,
+      message: data,
+      timestamp: new Date().toISOString()
+    });
+  });
+  
+  socket.on('disconnect', () => {
+    console.log('WebSocket client disconnected:', socket.id);
+  });
+});
+
+const server = httpServer.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
 
